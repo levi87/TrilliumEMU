@@ -1225,6 +1225,18 @@ void Spell::EffectDummy(SpellEffIndex effIndex)
 
             break;
         }
+        case SPELLFAMILY_PRIEST:
+        {   
+            switch (m_spellInfo->Id)
+            {
+                case 73325: // Leap of faith
+                {
+                    unitTarget->CastSpell(m_caster, 92832, false);
+                    break;
+                }
+            }
+        break;
+        }		
         case SPELLFAMILY_WARRIOR:
             // Charge
             if (m_spellInfo->SpellFamilyFlags & SPELLFAMILYFLAG_WARRIOR_CHARGE && m_spellInfo->SpellVisual[0] == 867)
@@ -1439,7 +1451,7 @@ void Spell::EffectDummy(SpellEffIndex effIndex)
                 // Searing Flames
                 if (AuraEffect const* sf = unitTarget->GetAuraEffect(77661, 0, m_caster->GetOwner()->GetGUID()))			
                 {		
-                    AddPctN(m_damage, sf->GetAmount() * ill->GetAmount());	//Need check this again.		
+                    AddPctN(m_damage, sf->GetBase()->GetStackAmount() * ill->GetAmount());
                     unitTarget->RemoveAura(77661);
                 }			
                 return;
@@ -3908,11 +3920,11 @@ void Spell::SpellDamageWeaponDmg(SpellEffIndex effIndex)
             if (m_spellInfo->SpellFamilyFlags[1] & 0x40)
             {
                 // Player can apply only 58567 Sunder Armor effect.
-                bool needCast = !unitTarget->HasAura(58567, m_caster->GetGUID());
+                bool needCast = !unitTarget->HasAura(58567);
                 if (needCast)
                     m_caster->CastSpell(unitTarget, 58567, true);
 
-                if (Aura * aur = unitTarget->GetAura(58567, m_caster->GetGUID()))
+                if (Aura * aur = unitTarget->GetAura(58567))
                 {
                     // 58388 - Glyph of Devastate dummy aura.
                     if (int32 num = (needCast ? 0 : 1) + (m_caster->HasAura(58388) ? 1 : 0))
@@ -5112,7 +5124,7 @@ void Spell::EffectScriptEffect(SpellEffIndex effIndex)
                     // proc a spellcast
                     if (Aura * chargesAura = m_caster->GetAura(59907))
                     {
-                        m_caster->CastSpell(unitTarget, spell_heal, true, NULL, NULL, m_caster->ToTempSummon()->GetSummonerGUID());
+                        unitTarget->CastSpell(unitTarget, spell_heal, true, NULL, NULL, m_caster->ToTempSummon()->GetSummonerGUID());
                         if (chargesAura->ModCharges(-1))
                             m_caster->ToTempSummon()->UnSummon();
                     }
