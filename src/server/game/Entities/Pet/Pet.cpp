@@ -1538,7 +1538,7 @@ bool Pet::resetTalents()
         return false;
     // Check pet talent type
     CreatureFamilyEntry const *pet_family = sCreatureFamilyStore.LookupEntry(ci->family);
-    if (!pet_family || pet_family->petTalentType < 0)
+    if (!pet_family || pet_family->petTalentType == PET_TALENT_TYPE_NOT_HUNTER_PET)
         return false;
 
     Player* player = owner->ToPlayer();
@@ -1903,4 +1903,17 @@ void Pet::SynchronizeLevelWithOwner()
         default:
             break;
     }
+}
+
+PetTalentType Pet::GetTalentType()
+{
+    CreatureInfo const *ci = GetCreatureInfo();
+    if (!ci)
+        return PET_TALENT_TYPE_NOT_HUNTER_PET;
+    
+    CreatureFamilyEntry const *pet_family = sCreatureFamilyStore.LookupEntry(ci->family);
+    if (!pet_family)
+        return PET_TALENT_TYPE_NOT_HUNTER_PET;
+    
+    return (PetTalentType)pet_family->petTalentType;
 }

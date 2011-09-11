@@ -7849,7 +7849,7 @@ void Player::_ApplyItemBonuses(ItemTemplate const *proto, uint8 slot, bool apply
             if (float(val) > 0.f)
                 HandleStatModifier(UNIT_MOD_ATTACK_POWER_RANGED_POS, TOTAL_VALUE, float(val), apply);
             else
-                HandleStatModifier(UNIT_MOD_ATTACK_POWER_RANGED_POS, TOTAL_VALUE, -float(val), apply);
+                HandleStatModifier(UNIT_MOD_ATTACK_POWER_RANGED_NEG, TOTAL_VALUE, -float(val), apply);
                 break;
 //            case ITEM_MOD_FERAL_ATTACK_POWER:
 //                ApplyFeralAPBonus(int32(val), apply);
@@ -18445,11 +18445,8 @@ void Player::SaveToDB()
     ss << uint32(m_achievementMgr.GetAchievementPoints());
     ss << ',';
     ss << uint32(GetByteValue(PLAYER_FIELD_BYTES, 2));
-    ss << ',';
-    ss << m_currentPetSlot;
-    ss << ',';
-    ss << m_petSlotUsed; 
-    ss << ',';
+    ss << ",";
+    ss << "," << m_currentPetSlot << "," << m_petSlotUsed;
     ss << uint32(m_grantableLevels);
     ss << ')';
 
@@ -23776,7 +23773,7 @@ void Player::LearnPetTalent(uint64 petGuid, uint32 talentId, uint32 talentRank)
     if (!pet_family)
         return;
 
-    if (pet_family->petTalentType < 0)                       // not hunter pet
+    if (pet_family->petTalentType == PET_TALENT_TYPE_NOT_HUNTER_PET)                       // not hunter pet
         return;
 
     // prevent learn talent for different family (cheating)
@@ -24031,7 +24028,7 @@ void Player::BuildPetTalentsInfoData(WorldPacket *data)
         return;
 
     CreatureFamilyEntry const *pet_family = sCreatureFamilyStore.LookupEntry(ci->family);
-    if (!pet_family || pet_family->petTalentType < 0)
+    if (!pet_family || pet_family->petTalentType == PET_TALENT_TYPE_NOT_HUNTER_PET)
         return;
 
     for (uint32 talentTabId = 1; talentTabId < sTalentTabStore.GetNumRows(); ++talentTabId)
