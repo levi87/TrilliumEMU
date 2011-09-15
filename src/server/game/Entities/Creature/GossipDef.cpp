@@ -71,12 +71,13 @@ void GossipMenu::AddMenuItem(int32 menuItemId, uint8 icon, std::string const& me
     menuItem.BoxMoney        = boxMoney;
 }
 
-void GossipMenu::AddGossipMenuItemData(uint32 menuItemId, uint32 gossipActionMenuId, uint32 gossipActionPoi)
+void GossipMenu::AddGossipMenuItemData(uint32 menuItemId, uint32 gossipActionMenuId, uint32 gossipActionPoi, uint32 gossipActionScript)
 {
     GossipMenuItemData& itemData = _menuItemData[menuItemId];
 
     itemData.GossipActionMenuId  = gossipActionMenuId;
     itemData.GossipActionPoi     = gossipActionPoi;
+    itemData.GossipActionScript  = gossipActionScript;
 }
 
 uint32 GossipMenu::GetMenuItemSender(uint32 menuItemId) const
@@ -481,11 +482,11 @@ void PlayerMenu::SendQuestQueryResponse(Quest const* quest) const
     data << uint32(quest->GetPlayersSlain());              // players slain
     data << uint32(quest->GetBonusTalents());              // bonus talents
     data << uint32(quest->GetRewArenaPoints());            // bonus arena points
-    data << uint32(0);            // reward skill line id
-    data << uint32(0);            // reward skill points
-    data << uint32(0);                // review rep show mask
-    data << uint32(0);        // questgiver portrait entry
-    data << uint32(0);       // quest turn in portrait entry
+    data << uint32(quest->GetRewSkillLineId());            // reward skill line id
+    data << uint32(quest->GetRewSkillPoints());            // reward skill points
+    data << uint32(quest->GetRewRepMask());                // review rep show mask
+    data << uint32(quest->GetQuestGiverPortrait());        // questgiver portrait entry
+    data << uint32(quest->GetQuestTurnInPortrait());       // quest turn in portrait entry
 
     if (quest->HasFlag(QUEST_FLAGS_HIDDEN_REWARDS))
     {
@@ -546,28 +547,30 @@ void PlayerMenu::SendQuestQueryResponse(Quest const* quest) const
         data << uint32(quest->ReqItemCount[i]);
     }
 
+    data << uint32(quest->GetRequiredSpell());
+
     for (uint32 i = 0; i < QUEST_OBJECTIVES_COUNT; ++i)
         data << questObjectiveText[i];
 
-    for (uint32 i = 0; i < 4; ++i)
+    for (uint32 i = 0; i < QUEST_CURRENCY_COUNT; ++i)
     {
-        data << uint32(0);
-        data << uint32(0);
+        data << uint32(quest->RewCurrencyId[i]);
+        data << uint32(quest->RewCurrencyCount[i]);
     }
 
-    for (uint32 i = 0; i < 4; ++i)                               // 4.0.0 currency required id and count
+    for (uint32 i = 0; i < QUEST_CURRENCY_COUNT; ++i)                               // 4.0.0 currency required id and count
     {
-        data << uint32(0);
-        data << uint32(0);
+        data << uint32(quest->ReqCurrencyId[i]);
+        data << uint32(quest->ReqCurrencyCount[i]);
     }
 
-    data << "";
-    data << "";
-    data << "";
-    data << "";
+    data << quest->GetQuestGiverPortraitText();
+    data << quest->GetQuestGiverPortraitUnk();
+    data << quest->GetQuestTurnInPortraitText();
+    data << quest->GetQuestTurnInPortraitUnk();
 
-    data << int32(0);
-    data << int32(0);
+    data << uint32(quest->GetSoundAccept());
+    data << uint32(quest->GetSoundTurnIn());
 
     _session->SendPacket(&data);
     sLog->outDebug(LOG_FILTER_NETWORKIO, "WORLD: Sent SMSG_QUEST_QUERY_RESPONSE questid=%u", quest->GetQuestId());

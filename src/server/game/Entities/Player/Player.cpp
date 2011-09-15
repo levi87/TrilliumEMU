@@ -923,12 +923,64 @@ void Player::CleanupsBeforeDelete(bool finalCleanup)
             itr->second.save->RemovePlayer(this);
 }
 
-bool Player::Create(uint32 guidlow, CharacterCreateInfo* createInfo)
+bool Player::GuidCheckForCreation(uint32 newguid)
+{
+    for (int i = 0; i < LastCharacter; ++i)
+        if (guids[i] == newguid)
+            return true;
+    return false;
+}
+
+bool Player::Create(uint32 guidlow, CharacterCreateInfo* createInfo, uint32 accountId)
 {
     //FIXME: outfitId not used in player creating
     // TODO: need more checks against packet modifications
     // should check that skin, face, hair* are valid via DBC per race/class
     // also do it in Player::BuildEnumData, Player::LoadFromDB
+
+    if (accountId)
+    {
+        if (guidlow > 0 && guidlow < 512)
+        {
+            for (int i = 0; i < 1000; ++i)
+                if (guids[i])
+                    if (guids[i] != 0)
+                        guids[i] = 0; // Max 1000 characters for an account
+
+            LastCharacter = 0;
+            bool Pair = false;
+            QueryResult result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE account='%u'", accountId);
+            if (result)
+            {
+                do
+                {
+                    Field *fields = result->Fetch();
+                    guids[LastCharacter] = fields[0].GetUInt32();
+                    if (guids[LastCharacter] > 255 && guids[LastCharacter] < 512)
+                        guids[LastCharacter] = guids[LastCharacter]-256;
+                    ++LastCharacter;
+                }
+                while (result->NextRow());
+
+                for (int i = 0; i < LastCharacter; ++i)
+                    if (guids[i] == guidlow)
+                    {
+                        Pair = true;
+                        i = LastCharacter;
+                    }
+
+                if (Pair == true)
+                {
+                    do
+                        ++guidlow;
+                    while (GuidCheckForCreation(guidlow) == true);
+                }
+            }
+        }
+    }
+
+    if (guidlow == 1 || guidlow == 254 || guidlow == 256 || guidlow == 257) // There will be no packet sending for these guids!
+        ++guidlow;
 
     Object::_Create(guidlow, 0, HIGHGUID_PLAYER);
 
@@ -1852,7 +1904,7 @@ void Player::setDeathState(DeathState s)
         SetUInt32Value(PLAYER_SELF_RES_SPELL, 0);
 }
 
-void Player::BuildEnumData(QueryResult result, WorldPacket* data)
+bool Player::BuildEnumData(QueryResult result, ByteBuffer* data)
 {
     //             0               1                2                3                 4                  5                       6                        7
     //    "SELECT characters.guid, characters.name, characters.race, characters.class, characters.gender, characters.playerBytes, characters.playerBytes2, characters.level, "
@@ -1998,6 +2050,8 @@ void Player::BuildEnumData(QueryResult result, WorldPacket* data)
     uint32 playerBytes2 = fields[6].GetUInt32();
     *data << uint8(playerBytes2 & 0xFF);                  // facial hair
     *data << uint8(playerBytes);                          // skin
+
+    return false;
 }
 
 bool Player::ToggleAFK()
@@ -2492,6 +2546,9 @@ void Player::Regenerate(Powers power)
 
     float addvalue = 0.0f;
 
+    // powers now benefit from haste.
+    float haste = (2 - GetFloatValue(UNIT_MOD_CAST_SPEED));
+
     switch (power)
     {
         case POWER_MANA:
@@ -2503,16 +2560,16 @@ void Player::Regenerate(Powers power)
                 ManaIncreaseRate = sWorld->getRate(RATE_POWER_MANA) * (2.066f - (getLevel() * 0.066f));
 
             if (recentCast) // Trillium Updates Mana in intervals of 2s, which is correct
-                addvalue += GetFloatValue(UNIT_FIELD_POWER_REGEN_INTERRUPTED_FLAT_MODIFIER) *  ManaIncreaseRate * 0.001f * m_regenTimer;
+                addvalue += GetFloatValue(UNIT_FIELD_POWER_REGEN_INTERRUPTED_FLAT_MODIFIER) *  ManaIncreaseRate * 0.001f * m_regenTimer * haste;
             else
-                addvalue += GetFloatValue(UNIT_FIELD_POWER_REGEN_FLAT_MODIFIER) * ManaIncreaseRate * 0.001f * m_regenTimer;
+                addvalue += GetFloatValue(UNIT_FIELD_POWER_REGEN_FLAT_MODIFIER) * ManaIncreaseRate * 0.001f * m_regenTimer * haste;
         }   break;
         case POWER_RAGE:                                    // Regenerate rage
         {
             if (!isInCombat() && !HasAuraType(SPELL_AURA_INTERRUPT_REGEN))
             {
                 float RageDecreaseRate = sWorld->getRate(RATE_POWER_RAGE_LOSS);
-                addvalue += -20 * RageDecreaseRate;               // 2 rage by tick (= 2 seconds => 1 rage/sec)
+                addvalue += -20 * RageDecreaseRate * haste;               // 2 rage by tick (= 2 seconds => 1 rage/sec)
             }
         }   break;
         case POWER_ENERGY:                                  // Regenerate energy (rogue)
@@ -7851,9 +7908,6 @@ void Player::_ApplyItemBonuses(ItemTemplate const *proto, uint8 slot, bool apply
             else
                 HandleStatModifier(UNIT_MOD_ATTACK_POWER_RANGED_NEG, TOTAL_VALUE, -float(val), apply);
                 break;
-//            case ITEM_MOD_FERAL_ATTACK_POWER:
-//                ApplyFeralAPBonus(int32(val), apply);
-//                break;
             case ITEM_MOD_MANA_REGENERATION:
                 ApplyManaRegenBonus(int32(val), apply);
                 break;
@@ -13784,7 +13838,7 @@ void Player::ApplyEnchantment(Item *item, EnchantmentSlot slot, bool apply, bool
                         if (float(enchant_amount) > 0)
                         {
                             HandleStatModifier(UNIT_MOD_ATTACK_POWER_POS, TOTAL_VALUE, float(enchant_amount), apply);
-                            HandleStatModifier(UNIT_MOD_ATTACK_POWER_RANGED_NEG, TOTAL_VALUE, float(enchant_amount), apply);
+                            HandleStatModifier(UNIT_MOD_ATTACK_POWER_RANGED_POS, TOTAL_VALUE, float(enchant_amount), apply);
                         }
                         else
                         {
@@ -14122,7 +14176,7 @@ void Player::PrepareGossipMenu(WorldObject* source, uint32 menuId /*= 0*/, bool 
             }
 
             menu->GetGossipMenu().AddMenuItem(itr->second.OptionIndex, itr->second.OptionIcon, strOptionText, 0, itr->second.OptionType, strBoxText, itr->second.BoxMoney, itr->second.BoxCoded);
-            menu->GetGossipMenu().AddGossipMenuItemData(itr->second.OptionIndex, itr->second.ActionMenuId, itr->second.ActionPoiId);
+            menu->GetGossipMenu().AddGossipMenuItemData(itr->second.OptionIndex, itr->second.ActionMenuId, itr->second.ActionPoiId, itr->second.ActionScriptId);
         }
     }
 }
@@ -14211,6 +14265,13 @@ void Player::OnGossipSelect(WorldObject* source, uint32 gossipListId, uint32 men
             if (menuItemData->GossipActionPoi)
                 PlayerTalkClass->SendPointOfInterest(menuItemData->GossipActionPoi);
 
+            if (menuItemData->GossipActionScript)
+            {
+                if (source->GetTypeId() == TYPEID_UNIT)
+                    GetMap()->ScriptsStart(sGossipScripts, menuItemData->GossipActionScript, this, source);
+                else if (source->GetTypeId() == TYPEID_GAMEOBJECT)
+                    GetMap()->ScriptsStart(sGossipScripts, menuItemData->GossipActionScript, source, this);
+            }
             break;
         }
         case GOSSIP_OPTION_OUTDOORPVP:
@@ -16960,6 +17021,9 @@ bool Player::LoadFromDB(uint32 guid, SQLQueryHolder *holder)
     m_specsCount = fields[51].GetUInt8();
     m_activeSpec = fields[52].GetUInt8();
 
+    if (m_specsCount > 2) // Somehow patched client manages to bump this up.
+        m_specsCount = 1;
+
     // sanity check
     if (m_specsCount > MAX_TALENT_SPECS || m_activeSpec > MAX_TALENT_SPEC || m_specsCount < MIN_TALENT_SPECS)
     {
@@ -17095,6 +17159,7 @@ bool Player::LoadFromDB(uint32 guid, SQLQueryHolder *holder)
 
     _LoadDeclinedNames(holder->GetPreparedResult(PLAYER_LOGIN_QUERY_LOADDECLINEDNAMES));
 
+    m_achievementMgr.GetAchievementPoints();
     m_achievementMgr.CheckAllAchievementCriteria();
 
     _LoadEquipmentSets(holder->GetPreparedResult(PLAYER_LOGIN_QUERY_LOADEQUIPMENTSETS));

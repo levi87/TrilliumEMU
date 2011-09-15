@@ -54,6 +54,7 @@ ScriptMapMap sQuestStartScripts;
 ScriptMapMap sSpellScripts;
 ScriptMapMap sGameObjectScripts;
 ScriptMapMap sEventScripts;
+ScriptMapMap sGossipScripts;
 ScriptMapMap sWaypointScripts;
 
 std::string GetScriptsTableNameByType(ScriptsType type)
@@ -67,6 +68,7 @@ std::string GetScriptsTableNameByType(ScriptsType type)
         case SCRIPTS_GAMEOBJECT:    res = "gameobject_scripts"; break;
         case SCRIPTS_EVENT:         res = "event_scripts";      break;
         case SCRIPTS_WAYPOINT:      res = "waypoint_scripts";   break;
+        case SCRIPTS_GOSSIP:        res = "gossip_scripts";     break;
         default: break;
     }
     return res;
@@ -83,6 +85,7 @@ ScriptMapMap* GetScriptsMapByType(ScriptsType type)
         case SCRIPTS_GAMEOBJECT:    res = &sGameObjectScripts;  break;
         case SCRIPTS_EVENT:         res = &sEventScripts;       break;
         case SCRIPTS_WAYPOINT:      res = &sWaypointScripts;    break;
+        case SCRIPTS_GOSSIP:        res = &sGossipScripts;      break;
         default: break;
     }
     return res;
@@ -3591,7 +3594,21 @@ void ObjectMgr::LoadQuests()
         "IncompleteEmote, CompleteEmote, OfferRewardEmote1, OfferRewardEmote2, OfferRewardEmote3, OfferRewardEmote4, "
     //   138                     139                     140                     141
         "OfferRewardEmoteDelay1, OfferRewardEmoteDelay2, OfferRewardEmoteDelay3, OfferRewardEmoteDelay4, "
-    //   142          143
+    //   142             143             144         145                 146
+        "RewSkillLineId, RewSkillPoints, RewRepMask, QuestGiverPortrait, QuestTurnInPortrait,"
+    //   147             148                149             150                151
+        "RewCurrencyId1, RewCurrencyCount1, RewCurrencyId2, RewCurrencyCount2, RewCurrencyId3, "
+    //   152                153             154
+        "RewCurrencyCount3, RewCurrencyId4, RewCurrencyCount4,"
+    //   155             156                157             158                159
+        "ReqCurrencyId1, ReqCurrencyCount1, ReqCurrencyId2, ReqCurrencyCount2, ReqCurrencyId3, "
+    //   160                161             162
+        "ReqCurrencyCount3, ReqCurrencyId4, ReqCurrencyCount4,"
+    //   163                     164                    165
+        "QuestGiverPortraitText, QuestGiverPortraitUnk, QuestTurnInPortraitText, "
+    //   166                    167          168
+        "QuestTurnInPortaitUnk, SoundAccept, SoundTurnIn,"
+    //   169          170
         "StartScript, CompleteScript"
         " FROM quest_template");
     if (!result)
@@ -4859,6 +4876,13 @@ void ObjectMgr::ValidateSpellScripts()
 
     sLog->outString(">> Validated %u scripts in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
     sLog->outString();
+}
+
+void ObjectMgr::LoadGossipScripts()
+
+{
+    LoadScripts(SCRIPTS_GOSSIP);
+    // checks are done in LoadGossipMenuItems
 }
 
 void ObjectMgr::LoadPageTexts()
@@ -8336,6 +8360,7 @@ void ObjectMgr::LoadGossipMenuItems()
 
     QueryResult result = WorldDatabase.Query(
         "SELECT menu_id, id, option_icon, option_text, option_id, npc_option_npcflag, "
+        "action_menu_id, action_poi_id, action_script_id, box_coded, box_money, box_text "
         "action_menu_id, action_poi_id, box_coded, box_money, box_text "
         "FROM gossip_menu_option ORDER BY menu_id, id");
 
@@ -8347,9 +8372,15 @@ void ObjectMgr::LoadGossipMenuItems()
     }
 
     uint32 count = 0;
+    
+    std::set<uint32> gossipScriptSet;
+    
+    for (ScriptMapMap::const_iterator itr = sGossipScripts.begin(); itr != sGossipScripts.end(); ++itr)
+        gossipScriptSet.insert(itr->first);  
 
     do
     {
+    	
         Field* fields = result->Fetch();
 
         GossipMenuItems gMenuItem;
@@ -8362,9 +8393,10 @@ void ObjectMgr::LoadGossipMenuItems()
         gMenuItem.OptionNpcflag         = fields[5].GetUInt32();
         gMenuItem.ActionMenuId          = fields[6].GetUInt32();
         gMenuItem.ActionPoiId           = fields[7].GetUInt32();
-        gMenuItem.BoxCoded              = fields[8].GetBool();
-        gMenuItem.BoxMoney              = fields[9].GetUInt32();
-        gMenuItem.BoxText               = fields[10].GetString();
+        gMenuItem.ActionScriptId        = fields[8].GetUInt32();
+        gMenuItem.BoxCoded              = fields[9].GetBool();
+        gMenuItem.BoxMoney              = fields[10].GetUInt32();
+        gMenuItem.BoxText               = fields[11].GetString();
 
         if (gMenuItem.OptionIcon >= GOSSIP_ICON_MAX)
         {
@@ -8381,10 +8413,33 @@ void ObjectMgr::LoadGossipMenuItems()
             gMenuItem.ActionPoiId = 0;
         }
 
+        if (gMenuItem.ActionScriptId)
+        {
+            if (gMenuItem.OptionType != GOSSIP_OPTION_GOSSIP)
+            {
+                sLog->outErrorDb("Table gossip_menu_option for menu %u, id %u have action_script_id %u but option_id is not GOSSIP_OPTION_GOSSIP, ignoring", gMenuItem.MenuId, gMenuItem.OptionIndex, gMenuItem.ActionScriptId);
+                continue;
+            }
+
+            if (sGossipScripts.find(gMenuItem.ActionScriptId) == sGossipScripts.end())
+            {
+                sLog->outErrorDb("Table gossip_menu_option for menu %u, id %u have action_script_id %u that does not exist in `gossip_scripts`, ignoring", gMenuItem.MenuId, gMenuItem.OptionIndex, gMenuItem.ActionScriptId);
+                continue;
+            }
+
+            gossipScriptSet.erase(gMenuItem.ActionScriptId);
+        }
+
         m_mGossipMenuItemsMap.insert(GossipMenuItemsMap::value_type(gMenuItem.MenuId, gMenuItem));
         ++count;
     }
     while (result->NextRow());
+
+    if (!gossipScriptSet.empty())
+    {
+        for (std::set<uint32>::const_iterator itr = gossipScriptSet.begin(); itr != gossipScriptSet.end(); ++itr)
+        sLog->outErrorDb("Table `gossip_scripts` contain unused script, id %u.", *itr);
+    }
 
     sLog->outString(">> Loaded %u gossip_menu_option entries in %u ms", count, GetMSTimeDiffToNow(oldMSTime));
     sLog->outString();
