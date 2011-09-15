@@ -359,6 +359,13 @@ void Pet::SavePetToDB(PetSlot mode)
     if (!pOwner)
         return;
 
+    if (mode == PET_SAVE_AS_CURRENT)
+        mode = pOwner->m_currentPetSlot;
+    if (mode >= PET_SLOT_HUNTER_FIRST && mode <= PET_SLOT_HUNTER_LAST && getPetType() != HUNTER_PET)
+        assert(false);
+    if (mode == PET_SAVE_NOT_IN_SLOT && getPetType() == HUNTER_PET)
+        assert(false);
+
     // not save pet as current if another pet temporary unsummoned
     if (mode == pOwner->m_currentPetSlot && pOwner->GetTemporaryUnsummonedPetNumber() &&
         pOwner->GetTemporaryUnsummonedPetNumber() != m_charmInfo->GetPetNumber())

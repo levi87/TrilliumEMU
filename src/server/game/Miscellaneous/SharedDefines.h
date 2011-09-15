@@ -3197,6 +3197,8 @@ enum PetSlot
     
     //Non-hunter pet slot
     PET_SLOT_OTHER_PET       = 100,        // PetType != HUNTER_PET
+
+    PET_SAVE_AS_DELETED        = -1,                        // not saved in fact
 };
 #define MAX_PET_STABLES         PET_SLOT_STABLE_LAST
 

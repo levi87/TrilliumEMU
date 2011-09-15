@@ -650,6 +650,9 @@ Player::Player (WorldSession *session): Unit(), m_achievementMgr(this), m_reputa
     m_speakTime = 0;
     m_speakCount = 0;
 
+    m_petSlotUsed = 0;
+    m_currentPetSlot = PET_SAVE_AS_DELETED;
+
     m_objectType |= TYPEMASK_PLAYER;
     m_objectTypeId = TYPEID_PLAYER;
 
