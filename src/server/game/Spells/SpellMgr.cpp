@@ -3283,6 +3283,11 @@ void SpellMgr::LoadDbcDataCorrections()
                 // that will be clear if we get more spells with problem like this
                 spellInfo->AttributesEx |= SPELL_ATTR1_DISPEL_AURAS_ON_IMMUNITY;
                 break;
+            case 62584: // Lifebinder's Gift
+            case 64185: // Lifebinder's Gift
+                spellEffect->EffectImplicitTargetB = TARGET_UNIT_NEARBY_ENTRY;
+                spellEffect->EffectImplicitTargetB = TARGET_UNIT_NEARBY_ENTRY;
+                break;                
             // ENDOF ULDUAR SPELLS
             //
             // TRIAL OF THE CRUSADER SPELLS
