@@ -434,6 +434,7 @@ void Spell::SpellDamageSchoolDmg(SpellEffIndex effIndex)
                         damage = unitTarget->CountPctFromMaxHealth(50);
                         break;
                     }
+                    case 20625: // Ritual of Doom Sacrifice
                     case 29142: // Eyesore Blaster
                     case 35139: // Throw Boom's Doom
                     case 55269: // Deathly Stare
@@ -1383,7 +1384,7 @@ void Spell::EffectDummy(SpellEffIndex effIndex)
 
                     // remove invalid attackers
                     for (Unit::AttackerSet::iterator aItr = attackers.begin(); aItr != attackers.end();)
-                        if (!(*aItr)->canAttack(m_caster))
+                        if (!(*aItr)->IsValidAttackTarget(m_caster))
                             attackers.erase(aItr++);
                         else
                             ++aItr;
@@ -1392,10 +1393,9 @@ void Spell::EffectDummy(SpellEffIndex effIndex)
                     uint32 maxTargets = std::min<uint32>(3, attackers.size());
                     for (uint32 i = 0; i < maxTargets; ++i)
                     {
-                        Unit::AttackerSet::iterator aItr = attackers.begin();
-                        std::advance(aItr, urand(0, attackers.size() - 1));
-                        AddUnitTarget(*aItr, 1);
-                        attackers.erase(aItr);
+                        Unit* attacker = SelectRandomContainerElement(attackers);
+                        AddUnitTarget(attacker, 1 << 1);
+                        attackers.erase(attacker);
                     }
 
                     // now let next effect cast spell at each target.
@@ -2640,10 +2640,7 @@ void Spell::EffectEnergize(SpellEffIndex effIndex)
         if (!avalibleElixirs.empty())
         {
             // cast random elixir on target
-            uint32 rand_spell = urand(0, avalibleElixirs.size()-1);
-            std::set<uint32>::iterator itr = avalibleElixirs.begin();
-            std::advance(itr, rand_spell);
-            m_caster->CastSpell(unitTarget, *itr, true, m_CastItem);
+            m_caster->CastSpell(unitTarget, SelectRandomContainerElement(avalibleElixirs), true, m_CastItem);
         }
     }
 }
@@ -4372,6 +4369,12 @@ void Spell::EffectScriptEffect(SpellEffIndex effIndex)
                     }
                     return;
                 }
+                case 35376:
+                   m_caster->TeleportTo(0, 1805.99f, 341.32f, 70.66f, 1.6f);
+                   break;
+                case 35727:
+                   m_caster->TeleportTo(530, 10038.7f, -7000.9f, 61.86f, 3.05f);
+                   break;                
                 case 45204: // Clone Me!
                     m_caster->CastSpell(unitTarget, damage, true);
                     break;
@@ -5497,9 +5500,12 @@ void Spell::EffectStuck(SpellEffIndex /*effIndex*/)
     if (pTarget->isInFlight())
         return;
 
-    pTarget->TeleportTo(pTarget->GetStartPosition(), unitTarget == m_caster ? TELE_TO_SPELL : 0);
     // homebind location is loaded always
-    // pTarget->TeleportTo(pTarget->m_homebindMapId, pTarget->m_homebindX, pTarget->m_homebindY, pTarget->m_homebindZ, pTarget->GetOrientation(), (unitTarget == m_caster ? TELE_TO_SPELL : 0));
+    WorldSafeLocsEntry const *ClosestGrave = sObjectMgr->GetClosestGraveYard(pTarget->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ(), pTarget->GetMapId(), pTarget->GetTeam());
+    if (ClosestGrave)
+        pTarget->TeleportTo(ClosestGrave->map_id, ClosestGrave->x, ClosestGrave->y, ClosestGrave->z, pTarget->GetOrientation());
+    else
+        pTarget->TeleportTo(pTarget->m_homebindMapId, pTarget->m_homebindX, pTarget->m_homebindY, pTarget->m_homebindZ, pTarget->GetOrientation(), (unitTarget == m_caster ? TELE_TO_SPELL : 0));
 
     // Stuck spell trigger Hearthstone cooldown
     SpellInfo const *spellInfo = sSpellMgr->GetSpellInfo(8690);

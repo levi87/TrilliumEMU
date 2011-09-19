@@ -870,7 +870,7 @@ Player::Player (WorldSession *session): Unit(), m_achievementMgr(this), m_reputa
 
     isDebugAreaTriggers = false;
 
-    SetPendingBind(NULL, 0);
+    SetPendingBind(0, 0);
 }
 
 Player::~Player ()
@@ -1809,9 +1809,9 @@ void Player::Update(uint32 p_time)
         if (_pendingBindTimer <= p_time)
         {
             // Player left the instance
-            if (_pendingBind->GetInstanceId() == GetInstanceId())
+            if (_pendingBindId == GetInstanceId())
                 BindToInstance();
-            SetPendingBind(NULL, 0);
+            SetPendingBind(0, 0);
         }
         else
             _pendingBindTimer -= p_time;
@@ -2263,9 +2263,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
         if (!sMapMgr->CanPlayerEnter(mapid, this, false))
             return false;
 
-        // If the map is not created, assume it is possible to enter it.
-        // It will be created in the WorldPortAck.
-        Map *map = sMapMgr->FindMap(mapid);
+        Map* map = sMapMgr->CreateMap(mapid, this, 0);
         if (!map || map->CanEnter(this))
         {
             //lets reset near teleport flag if it wasn't reset during chained teleports
@@ -17176,7 +17174,10 @@ bool Player::LoadFromDB(uint32 guid, SQLQueryHolder *holder)
 bool Player::isAllowedToLoot(const Creature* creature)
 {
     if (!creature->isDead() || !creature->IsDamageEnoughForLootingAndReward())
-       return false;
+        return false;
+       
+    if (HasPendingBind())
+        return false;
 
     const Loot* loot = &creature->loot;
     if (loot->isLooted()) // nothing to loot or everything looted.
@@ -18115,10 +18116,14 @@ InstancePlayerBind* Player::BindToInstance(InstanceSave *save, bool permanent, b
 
 void Player::BindToInstance()
 {
+    InstanceSave* mapSave = sInstanceSaveMgr->GetInstanceSave(_pendingBindId);
+    if (!mapSave) //it seems sometimes mapSave is NULL, but I did not check why
+        return;
+
     WorldPacket data(SMSG_INSTANCE_SAVE_CREATED, 4);
     data << uint32(0);
     GetSession()->SendPacket(&data);
-    BindToInstance(_pendingBind, true);
+    BindToInstance(mapSave, true);
 }
 
 void Player::SendRaidInfo()
@@ -20718,6 +20723,7 @@ void Player::UpdateHomebindTime(uint32 time)
 void Player::UpdatePvPState(bool onlyFFA)
 {
     // TODO: should we always synchronize UNIT_FIELD_BYTES_2, 1 of controller and controlled?
+    // no, we shouldn't, those are checked for affecting player by client
     if (!pvpInfo.inNoPvPArea && !isGameMaster()
         && (pvpInfo.inFFAPvPArea || sWorld->IsFFAPvPRealm()))
     {
@@ -23139,7 +23145,7 @@ void Player::UpdateCharmedAI()
         GetMotionMaster()->MoveFollow(charmer, PET_FOLLOW_DIST, PET_FOLLOW_ANGLE);
 
     Unit* target = getVictim();
-    if (!target || !charmer->canAttack(target))
+    if (!target || !charmer->IsValidAttackTarget(target))
     {
         target = charmer->SelectNearestTarget();
         if (!target)
