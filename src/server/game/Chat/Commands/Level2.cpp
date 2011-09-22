@@ -301,7 +301,7 @@ bool ChatHandler::HandlePInfoCommand(const char* args)
         if (!result)
             return false;
 
-        Field *fields = result->Fetch();
+        Field* fields = result->Fetch();
         total_player_time = fields[0].GetUInt32();
         level = fields[1].GetUInt32();
         money = fields[2].GetUInt32();
@@ -388,6 +388,8 @@ bool ChatHandler::HandlePInfoCommand(const char* args)
         case RACE_TROLL:            race_s = "Troll";       break;
         case RACE_BLOODELF:         race_s = "Blood Elf";   break;
         case RACE_DRAENEI:          race_s = "Draenei";     break;
+        case RACE_WORGEN:           race_s = "Worgen";      break;
+        case RACE_GOBLIN:           race_s = "Goblin";      break;
     }
     switch(Class)
     {

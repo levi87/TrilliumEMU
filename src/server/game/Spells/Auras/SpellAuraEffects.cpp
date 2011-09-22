@@ -1346,6 +1346,16 @@ void AuraEffect::PeriodicTick(AuraApplication * aurApp, Unit* caster) const
         case SPELL_AURA_PERIODIC_DAMAGE:
         case SPELL_AURA_PERIODIC_DAMAGE_PERCENT:
             HandlePeriodicDamageAurasTick(target, caster);
+
+            /* Dark Evangelism */
+            if (target->HasAura(15407)) //Mind Flay
+            {
+                if (caster->HasAura(81659)) //Rank 1
+                    caster->CastSpell(caster, 87117, true);
+                else
+                    if (caster->HasAura(81662)) //Rank 2
+                        caster->CastSpell(caster, 87118, true);
+            }
             break;
         case SPELL_AURA_PERIODIC_LEECH:
             HandlePeriodicHealthLeechAuraTick(target, caster);
@@ -4898,9 +4908,27 @@ void AuraEffect::HandleAuraDummy(AuraApplication const* aurApp, uint8 mode, bool
                     caster->CastCustomSpell(target, 63338, &damage, NULL, NULL, true);
                     break;
                 }
+                case 75572: // Eject Spell!
+                {
+                    if (Vehicle *vehicle = caster->GetVehicleKit())
+                        if (Unit *driver = vehicle->GetPassenger(0))
+                        {
+                            driver->ExitVehicle();
+                            driver->GetMotionMaster()->MoveJump(driver->GetPositionX(), driver->GetPositionY(), driver->GetPositionZ()+7.0f, 2.0f, 2.0f);
+                        }
+                        break;
+                }
                 case 71563:
+                {
                     if (Aura* newAura = target->AddAura(71564, target))
                         newAura->SetStackAmount(newAura->GetSpellInfo()->StackAmount);
+                    break;
+                }
+                case 74401:
+                {
+                    caster->CastSpell(caster, GetAmount(), true);
+                    break;
+                }
             }
         }
         // AT REMOVE
@@ -5692,6 +5720,13 @@ void AuraEffect::HandlePeriodicDummyAuraTick(Unit* target, Unit* caster) const
         case SPELLFAMILY_GENERIC:
             switch (GetId())
             {
+                case 66149: // Bullet Controller Periodic - 10 Man
+                case 68396: // Bullet Controller Periodic - 25 Man
+                {
+                    caster->CastCustomSpell(66152, SPELLVALUE_MAX_TARGETS, urand(1,6), target, true);
+                    caster->CastCustomSpell(66153, SPELLVALUE_MAX_TARGETS, urand(1,6), target, true);
+                    break;
+                }
                 case 54798: // FLAMING Arrow Triggered Effect
                 {
                     if (!caster || !target || !target->ToCreature() || !caster->GetVehicle() || target->HasAura(54683))

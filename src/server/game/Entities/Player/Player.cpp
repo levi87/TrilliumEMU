@@ -925,12 +925,13 @@ void Player::CleanupsBeforeDelete(bool finalCleanup)
             itr->second.save->RemovePlayer(this);
 }
 
-bool Player::GuidCheckForCreation(uint32 newguid)
+bool Player::CanCreate(uint32 newguid)
 {
-    for (int i = 0; i < LastCharacter; ++i)
-        if (guids[i] == newguid)
-            return true;
-    return false;
+    if (newguid > 255)
+        for (int i = 256; i < signed(newguid+1); i+=256)
+            if (i+1 == newguid || i == newguid) // There will be no packet sending for these guids!
+                return false;
+    return true;
 }
 
 bool Player::Create(uint32 guidlow, CharacterCreateInfo* createInfo, uint32 accountId)
@@ -942,47 +943,16 @@ bool Player::Create(uint32 guidlow, CharacterCreateInfo* createInfo, uint32 acco
 
     if (accountId)
     {
-        if (guidlow > 0 && guidlow < 512)
+        if (guidlow == 1 || guidlow == 254) // There will be no packet sending for these guids!
+            ++guidlow;
+
+        if (guidlow != 1 && guidlow != 254)
         {
-            for (int i = 0; i < 1000; ++i)
-                if (guids[i])
-                    if (guids[i] != 0)
-                        guids[i] = 0; // Max 1000 characters for an account
-
-            LastCharacter = 0;
-            bool Pair = false;
-            QueryResult result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE account='%u'", accountId);
-            if (result)
-            {
-                do
-                {
-                    Field *fields = result->Fetch();
-                    guids[LastCharacter] = fields[0].GetUInt32();
-                    if (guids[LastCharacter] > 255 && guids[LastCharacter] < 512)
-                        guids[LastCharacter] = guids[LastCharacter]-256;
-                    ++LastCharacter;
-                }
-                while (result->NextRow());
-
-                for (int i = 0; i < LastCharacter; ++i)
-                    if (guids[i] == guidlow)
-                    {
-                        Pair = true;
-                        i = LastCharacter;
-                    }
-
-                if (Pair == true)
-                {
-                    do
-                        ++guidlow;
-                    while (GuidCheckForCreation(guidlow) == true);
-                }
-            }
+            do
+                ++guidlow;
+            while (CanCreate(guidlow) == false); // There will be no packet sending for these guids!
         }
     }
-
-    if (guidlow == 1 || guidlow == 254 || guidlow == 256 || guidlow == 257) // There will be no packet sending for these guids!
-        ++guidlow;
 
     Object::_Create(guidlow, 0, HIGHGUID_PLAYER);
 
@@ -1915,7 +1885,7 @@ bool Player::BuildEnumData(QueryResult result, ByteBuffer* data)
     //    15                    16                   17                     18                   19               20                     21
     //    "characters.at_login, character_pet.entry, character_pet.modelid, character_pet.level, characters.data, character_banned.guid, character_declinedname.genitive "
 
-    Field *fields = result->Fetch();
+    Field* fields = result->Fetch();
 
     uint32 guid = fields[0].GetUInt32();
     uint8 playerRace = fields[2].GetUInt8();
@@ -2396,6 +2366,7 @@ bool Player::TeleportToBGEntryPoint()
 
     ScheduleDelayedOperation(DELAYED_BG_MOUNT_RESTORE);
     ScheduleDelayedOperation(DELAYED_BG_TAXI_RESTORE);
+    ScheduleDelayedOperation(DELAYED_BG_GROUP_RESTORE);
     return TeleportTo(m_bgData.joinPos);
 }
 
@@ -2450,7 +2421,13 @@ void Player::ProcessDelayedOperations()
             ContinueTaxiFlight();
         }
     }
-
+    
+    if (m_DelayedOperations & DELAYED_BG_GROUP_RESTORE)
+    {
+        if (Group *g = GetGroup())
+            g->SendUpdateToPlayer(GetGUID());
+    }
+    
     //we have executed ALL delayed ops, so clear the flag
     m_DelayedOperations = 0;
 }
@@ -3085,12 +3062,17 @@ void Player::GiveLevel(uint8 level)
     data << uint32(int32(classInfo.basehealth) - int32(GetCreateHealth()));
     // for (int i = 0; i < MAX_POWERS; ++i)                  // Powers loop (0-6)
     data << uint32(int32(classInfo.basemana)   - int32(GetCreateMana()));
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);
+    data << uint32(0); // rage
+    data << uint32(0); // focus
+    data << uint32(0); // energy
+    data << uint32(0); // happiness
+    data << uint32(0); // runes
+    data << uint32(0); // runic power
+    data << uint32(0); // soul shards
+    data << uint32(0); // eclipse
+    data << uint32(0); // holy power
+    data << uint32(0); // ??
+
     // end for
     for (uint8 i = STAT_STRENGTH; i < MAX_STATS; ++i)          // Stats loop (0-4)
         data << uint32(int32(info.stats[i]) - GetCreateStat(Stats(i)));
@@ -4873,7 +4855,7 @@ void Player::DeleteFromDB(uint64 playerguid, uint32 accountId, bool updateRealmC
             {
                 do
                 {
-                    Field *fields = resultMail->Fetch();
+                    Field* fields = resultMail->Fetch();
 
                     uint32 mail_id       = fields[0].GetUInt32();
                     uint16 mailType      = fields[1].GetUInt16();
@@ -16499,7 +16481,7 @@ bool Player::LoadPositionFromDB(uint32& mapid, float& x, float& y, float& z, flo
     if (!result)
         return false;
 
-    Field *fields = result->Fetch();
+    Field* fields = result->Fetch();
 
     x = fields[0].GetFloat();
     y = fields[1].GetFloat();
@@ -16621,6 +16603,9 @@ bool Player::LoadFromDB(uint32 guid, SQLQueryHolder *holder)
 
     _LoadIntoDataField(fields[54].GetCString(), PLAYER_EXPLORED_ZONES_1, PLAYER_EXPLORED_ZONES_SIZE);
     _LoadIntoDataField(fields[56].GetCString(), PLAYER__FIELD_KNOWN_TITLES, KNOWN_TITLES_SIZE*2);
+
+    if (m_achievementMgr.GetAchievementPoints())
+        fields[57].GetUInt32();
 
     SetFloatValue(UNIT_FIELD_BOUNDINGRADIUS, DEFAULT_WORLD_OBJECT_SIZE);
     SetFloatValue(UNIT_FIELD_COMBATREACH, 1.5f);
@@ -17668,7 +17653,7 @@ void Player::_LoadMail()
     {
         do
         {
-            Field *fields = result->Fetch();
+            Field* fields = result->Fetch();
             Mail *m = new Mail;
             m->messageID = fields[0].GetUInt32();
             m->messageType = fields[1].GetUInt8();
@@ -17922,7 +17907,7 @@ void Player::_LoadCurrency(PreparedQueryResult result)
     {
         do
         {
-            Field *fields = result->Fetch();
+            Field* fields = result->Fetch();
 
             uint32 currency_id = fields[0].GetUInt32();
             uint32 totalCount = fields[1].GetUInt32();
@@ -19309,7 +19294,7 @@ void Player::UpdateContestedPvP(uint32 diff)
 
 void Player::UpdatePvPFlag(time_t currTime)
 {
-    if (!IsPvP())
+    if (!IsPvP() || InBattleground() || InArena())
         return;
     if (pvpInfo.endTimer == 0 || currTime < (pvpInfo.endTimer + 300) || pvpInfo.inHostileArea)
         return;
@@ -19993,7 +19978,7 @@ void Player::RemovePetitionsAndSigns(uint64 guid, uint32 type)
     {
         do                                                  // this part effectively does nothing, since the deletion / modification only takes place _after_ the PetitionQuery. Though I don't know if the result remains intact if I execute the delete query beforehand.
         {                                                   // and SendPetitionQueryOpcode reads data from the DB
-            Field *fields = result->Fetch();
+            Field* fields = result->Fetch();
             uint64 ownerguid   = MAKE_NEW_GUID(fields[0].GetUInt32(), 0, HIGHGUID_PLAYER);
             uint64 petitionguid = MAKE_NEW_GUID(fields[1].GetUInt32(), 0, HIGHGUID_ITEM);
 
@@ -21611,6 +21596,7 @@ void Player::SendInitialPacketsBeforeAddToMap()
 
     SendInitialActionButtons();
     m_reputationMgr.SendInitialReputations();
+    m_achievementMgr.GetAchievementPoints();
     m_achievementMgr.SendAllAchievementData();
 
     SendEquipmentSetList();

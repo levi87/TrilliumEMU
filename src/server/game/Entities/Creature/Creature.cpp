@@ -1509,9 +1509,16 @@ void Creature::setDeathState(DeathState s)
 
     if (s == JUST_DIED)
     {
+        if(GetCreatureInfo()->flags_extra)
+        {
+            m_corpseRemoveTime = time(NULL) + 10;
+            m_respawnTime = time(NULL) + m_respawnDelay + 10;
+        }
+        else
+        {        
         m_corpseRemoveTime = time(NULL) + m_corpseDelay;
         m_respawnTime = time(NULL) + m_respawnDelay + m_corpseDelay;
-
+        }
         // always save boss respawn time at death to prevent crash cheating
         if (sWorld->getBoolConfig(CONFIG_SAVE_RESPAWN_TIME_IMMEDIATELY) || isWorldBoss())
             SaveRespawnTime();
@@ -1583,8 +1590,8 @@ bool Creature::FallGround()
     
     // Hack ... ground_Z should not be invalid
     // If Vmap is fixed remove this
-	if(ground_Z == -200000.0f)
-	return false;        
+    if (ground_Z == -200000.0f)
+    return false;        
     // End hack
     GetMotionMaster()->MoveFall(ground_Z, EVENT_FALL_GROUND);
     Unit::setDeathState(DEAD_FALLING);

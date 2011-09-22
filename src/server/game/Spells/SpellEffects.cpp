@@ -555,6 +555,34 @@ void Spell::SpellDamageSchoolDmg(SpellEffIndex effIndex)
             }
             case SPELLFAMILY_PRIEST:
             {
+                /* Evangelism */
+                if (m_caster->HasAura(81659)) //Rank 1
+                {
+                    if (m_spellInfo->Id == 585 || m_spellInfo->Id == 14914)
+                        m_caster->CastSpell(m_caster, 81660, true);
+                }
+                
+                if (m_caster->HasAura(81662)) //Rank 2
+                {
+                    if (m_spellInfo->Id == 585 || m_spellInfo->Id == 14914)
+                        m_caster->CastSpell(m_caster, 81661, true);
+                }
+                
+                // Chakra
+                if (m_caster->HasAura(14751))
+                {
+                    switch(m_spellInfo->Id)
+                    {
+                        case   585:  /* Smite */
+                        case 73510:  /* Mind Spike */
+                            {
+                                m_caster->CastSpell(m_caster, 81209, true); // Chakra : Chastise
+                                break;
+                            }
+                        default:
+                            break;
+                    }
+                }
                 // Shadow Word: Death - deals damage equal to damage done to caster
                 if (m_spellInfo->SpellFamilyFlags[1] & 0x2)
                 {
@@ -893,6 +921,12 @@ void Spell::EffectDummy(SpellEffIndex effIndex)
                         // Reindeer
                         m_caster->CastSpell(m_caster, 25858, true); //60% ground Reindeer
 
+                    return;
+                }
+                case 56989: // Glyph of Dragon's Breath
+                {
+                    if (unitTarget)
+                        m_caster->CastSpell(m_caster, 56373, false, NULL);
                     return;
                 }
                 case 26074:                                 // Holiday Cheer
@@ -2185,6 +2219,23 @@ void Spell::EffectPowerBurn(SpellEffIndex effIndex)
 
 void Spell::EffectHeal(SpellEffIndex /*effIndex*/)
 {
+    /* Chakra */
+    if (m_caster->HasAura(14571))
+    {
+        switch(m_spellInfo->Id)
+        {
+            case  2050: /* Heal */
+            case  2060: /* Greater Heal*/
+            case  2061: /* Flash Heal */
+            case 32546: /* Binding Heal */
+               m_caster->CastSpell(m_caster, 81208, true); /* Chakra: Serenity */
+               break;
+               
+            case 596: /* Prayer of Healing */
+               m_caster->CastSpell(m_caster, 81206, true); /* Chakra: Sanctuary */
+               break;
+        }
+    }
 }
 
 void Spell::SpellDamageHeal(SpellEffIndex /*effIndex*/)
@@ -3041,6 +3092,9 @@ void Spell::EffectSummonType(SpellEffIndex effIndex)
                     if (m_spellInfo->Id == 18662 || // Curse of Doom
                         properties->Id == 2081)     // Mechanical Dragonling, Arcanite Dragonling, Mithril Dragonling TODO: Research on meaning of basepoints
                         amount = 1;
+
+                    if ((properties->Id == 2081 || m_spellInfo->Id == 13258 || m_spellInfo->Id == 13166) && !m_CastItem)
+                        return;
 
                     TempSummonType summonType = (duration == 0) ? TEMPSUMMON_DEAD_DESPAWN : TEMPSUMMON_TIMED_DESPAWN;
 

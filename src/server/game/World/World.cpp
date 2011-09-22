@@ -78,7 +78,7 @@
 #include "CreatureTextMgr.h"
 #include "SmartAI.h"
 #include "Channel.h"
-#include "ItemInfo.h"
+#include "ItemInfoMgr.h"
 
 volatile bool World::m_stopEvent = false;
 uint8 World::m_ExitCode = SHUTDOWN_EXIT_CODE;
@@ -1829,7 +1829,7 @@ void World::LoadAutobroadcasts()
     do
     {
 
-        Field *fields = result->Fetch();
+        Field* fields = result->Fetch();
         std::string message = fields[0].GetString();
 
         m_Autobroadcasts.push_back(message);
@@ -1849,117 +1849,82 @@ void World::LoadCharacterCheck()
 
     uint32 oldMSTime = getMSTime();
 
-    // Don't try to understand whole system because the system works very complex.
     // How it works ?
-    // First it will search whole exist characters in the database. If an account has both guid which are
-    // 1 and 257, 2 and 258 (... to 255 ad 511) then the system will make a new guid for high guid.
-    // For example:
-    // AccountId = 5 and it has 2 characters. The guids of the characters are 6 and 262.
-    // 262 - 0x100(256) = 6. That means 262 and 6 are same ids. (6 = 6(262)).
+    // First it will search whole exist characters in the database. If there is a guid which is higher than
+    // 256 and lower than 512(also if it is 1, 254, 256 or 257, 512 or 513, 768 or 769 ...)
+    // then the system will make a new guid for it.
 
-    uint32 CurrentAccountId = 0;
-    uint32 CurrentNumber[10000];
+    // How long It will take ?
+    // If you have characters more than 255 then generally it can took 1-20 secs but its just for once. 
+    // In the future it will be 1-30 ms.
+
     uint32 LastGUID;
+    int Number = 0;
+    int PairList[1000];
 
     uint32 count = 0;
     do
     {
-        Field *fields = result->Fetch();
+        Field* fields = result->Fetch();
 
-        if (fields[1].GetInt32() == CurrentAccountId)
-            ++CurrentNumber[CurrentAccountId];
-        else
-            CurrentNumber[fields[1].GetInt32()] = count+1;
         GCharacters gcharacters;
 
         LastGUID = fields[0].GetInt32();
         gcharacters.guid = LastGUID;
-        CurrentAccountId = fields[1].GetInt32();
-        gcharacters.accountId = CurrentAccountId;
 
         mCharacters[count] = gcharacters;
         ++count;
     }
     while (result->NextRow());
 
-    uint32 LastCharacter = 0;
-    uint32 guids[1000];
-    uint32 applied[1000];
     for (int i = 0; i < signed(count); ++i)
     {
-        const GCharacters* CharsForCount = GetCharactersForCheck(i);
-        uint32 start = i;
-        if (i != 0)
-            --start;
-
-        for (int ii = start; ii < signed(CurrentNumber[CharsForCount->accountId]); ++ii)
-            if (const GCharacters* Chars = GetCharactersForCheck(ii))
-                if (Chars->guid < 512)
+        if (const GCharacters* CharsForCount = GetCharactersForCheck(i))
+        {
+            if (CharsForCount->guid > 257 && CharsForCount->guid < 512)
+            {
+                PairList[Number] = CharsForCount->guid-256; // It will be +256...
+                ++Number;
+            }
+            else
+            {
+                if (CharsForCount->guid == 1 || CharsForCount->guid == 254)
                 {
-                    if (Chars->guid > 255)
-                        guids[LastCharacter] = Chars->guid-256;
-                    else
-                        guids[LastCharacter] = Chars->guid;
-                    applied[LastCharacter] = Chars->accountId;
-                    ++LastCharacter;
+                    PairList[Number] = CharsForCount->guid-256; // It will be +256...
+                    ++Number;
                 }
-
-                i = CurrentNumber[CharsForCount->accountId];
+            }
+        }
     }
 
-    int Number = 0;
-    int PairList[1000];
-    for (int i = 0; i < signed(LastCharacter); ++i)
+    int coef = LastGUID/256;
+    if (coef > 0)
     {
-        for (int ii = 0; ii < signed(LastCharacter); ++ii)
-            if (i != ii)
-                if (applied[i] == applied[ii])
-                    if (guids[i] == guids[ii])
-                    {
-                        bool Exist = false;
-                        if (Number != 0)
-                            for(int iii = 0; iii < Number; ++iii)
-                                if (Exist == false)
-                                    for(int iiii = 0; iiii < Number; ++iiii)
-                                        if (iii != iiii)
-                                            if (guids[ii] == PairList[iiii])
-                                                Exist = true;
-
-                        if (!Exist)
-                        {
-                            PairList[Number] = guids[i];
-                            ++Number;
-                        }
-                    }
+        for (int i = 1; i < coef+1; ++i)
+        {
+            int First = (i*256);
+            if (ExistGUID(First) == true)
+            {
+                PairList[Number] = First-256;
+                ++Number;
+            }
+            int Second = 0;
+            if (First + 1 < signed(LastGUID) || First+1 == signed(LastGUID))
+                Second = First + 1;
+            if (Second != 0)
+            {
+                if (ExistGUID(Second) == true)
+                {
+                    PairList[Number] = Second-256;
+                    ++Number;
+                }
+            }
+        }
     }
 
     int oldguid = 0;
     int newguid = LastGUID;
-    int Ignore;
-    for (int i = 0; i < 4; ++i)
-    {
-        switch (i)
-        {
-            case 0:
-                Ignore = 1;
-                break;
-            case 1:
-                Ignore = 254;
-                break;
-            case 2:
-                Ignore = 256;
-                break;
-            case 3:
-                Ignore = 257;
-                break;
-        }
-        QueryResult result = CharacterDatabase.PQuery("SELECT `guid` FROM `characters` WHERE `guid`=%u", Ignore);
-        if (result)
-        {
-            PairList[Number] = Ignore-256; // It will be +256...
-            ++Number;
-        }
-    }
+
     if (Number != 0)
     {
         for (int i = 0; i < Number; ++i)
@@ -2968,9 +2933,8 @@ void World::ShutdownMsg(bool show, Player* player)
 
     ///- Display a message every 12 hours, hours, 5 minutes, minute, 5 seconds and finally seconds
     if (show ||
-        (m_ShutdownTimer < 10) ||
-        (m_ShutdownTimer < 30 && (m_ShutdownTimer % 5) == 0) || // < 30 sec; every 5 sec
-        (m_ShutdownTimer < 5 * MINUTE && (m_ShutdownTimer % MINUTE) == 0) || // < 5 min ; every 1 min
+        (m_ShutdownTimer < 5* MINUTE && (m_ShutdownTimer % 15) == 0) || // < 5 min; every 15 sec
+        (m_ShutdownTimer < 15 * MINUTE && (m_ShutdownTimer % MINUTE) == 0) || // < 15 min ; every 1 min
         (m_ShutdownTimer < 30 * MINUTE && (m_ShutdownTimer % (5 * MINUTE)) == 0) || // < 30 min ; every 5 min
         (m_ShutdownTimer < 12 * HOUR && (m_ShutdownTimer % HOUR) == 0) || // < 12 h ; every 1 h
         (m_ShutdownTimer > 12 * HOUR && (m_ShutdownTimer % (12 * HOUR)) == 0)) // > 12 h ; every 12 h
@@ -3110,7 +3074,7 @@ void World::_UpdateRealmCharCount(PreparedQueryResult resultCharCount)
 {
     if (resultCharCount)
     {
-        Field *fields = resultCharCount->Fetch();
+        Field* fields = resultCharCount->Fetch();
         uint32 accountId = fields[0].GetUInt32();
         uint32 charCount = fields[1].GetUInt32();
 
@@ -3141,7 +3105,7 @@ void World::InitDailyQuestResetTime()
     QueryResult result = CharacterDatabase.Query("SELECT MAX(time) FROM character_queststatus_daily");
     if (result)
     {
-        Field *fields = result->Fetch();
+        Field* fields = result->Fetch();
         mostRecentQuestTime = time_t(fields[0].GetUInt32());
     }
     else
@@ -3314,7 +3278,7 @@ void World::LoadWorldStates()
 
     do
     {
-        Field *fields = result->Fetch();
+        Field* fields = result->Fetch();
         m_worldstates[fields[0].GetUInt32()] = fields[1].GetUInt32();
         ++count;
     }
